@@ -1,0 +1,64 @@
+== Задание 1.
+
+CREATE FUNCTION select_orders_by_item_name (@name_item nvarchar(max))  
+RETURNS TABLE   
+RETURN
+(
+    SELECT Orders.row_id, 
+           (SELECT Customers.name
+            FROM Customers
+            WHERE Customers.row_id = Orders.customer_id) AS customer,
+           COUNT(OrderItems.row_id) AS items_count  
+    FROM Orders
+    JOIN OrderItems
+    ON (OrderItems.order_id = Orders.row_id AND OrderItems.name = @name_item)
+    GROUP BY Orders.row_id, Orders.customer_id
+);
+
+
+== Задание 2.
+
+CREATE FUNCTION calculate_total_price_for_orders_group (@row_id INT)  
+RETURNS int 
+AS
+BEGIN 
+    DECLARE @sum_price int;  
+    WITH Recursive (row_id, group_name)
+    AS
+    (
+        SELECT row_id, group_name
+        FROM Orders ord
+        WHERE ord.row_id = @row_id
+        UNION ALL
+        SELECT ord.row_id, ord.group_name
+        FROM Orders ord
+        JOIN Recursive r 
+        ON (ord.parent_id = r.row_id)
+    )
+    SELECT @sum_price = SUM(OrderItems.price)
+    FROM OrderItems
+    WHERE OrderItems.order_id IN (SELECT rec.row_id
+                                  FROM Recursive rec
+                                  WHERE rec.group_name is NULL)
+    IF (@sum_price IS NULL)   
+        SET @sum_price = 0;  
+    RETURN @sum_price;
+END;
+
+
+== Задание 3.
+
+SELECT (SELECT Customers.name
+        FROM Customers
+        WHERE Customers.row_id = Orders.customer_id) AS customer
+FROM Orders
+WHERE YEAR(Orders.registered_at) = '2020'
+GROUP BY Orders.customer_id
+HAVING COUNT(Orders.row_id) = (SELECT COUNT(mirror_orders.row_id)
+                               FROM Orders mirror_orders
+                               WHERE YEAR(mirror_orders.registered_at) = '2020' AND
+                               mirror_orders.customer_id = Orders.customer_id AND
+                               EXISTS (SELECT OrderItems.order_id
+                                       FROM OrderItems
+                                       WHERE OrderItems.order_id = mirror_orders.row_id AND 
+                                       OrderItems.name = N'Кассовый Аппарат'))
